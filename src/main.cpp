@@ -7,6 +7,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
@@ -98,6 +99,31 @@ int main() {
            *   sequentially every .02 seconds
            */
 
+          // find the next waypoint that the car needs to travel to
+        
+          // create a spline towards that
+          int lane = 1;
+          int next_wp; 
+          next_wp = NextWaypoint(car_x, car_y, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y); 
+          std::cout << "Car x: " << car_x << " y: " << car_y << " yaw: " << car_yaw << std::endl;
+          std::cout << "next_wp: " << next_wp << " " << next_wp+1 << std::endl;
+          vector<double> x_points, y_points;
+          x_points.push_back(car_x);
+          x_points.push_back(map_waypoints_x[next_wp] + map_waypoints_dx[next_wp]*(2+(lane*4)));
+          x_points.push_back(map_waypoints_x[next_wp+1] + map_waypoints_dx[next_wp+1]*(2+(lane*4)));
+          y_points.push_back(car_y);
+          y_points.push_back(map_waypoints_y[next_wp] + map_waypoints_dy[next_wp]*(2+(lane*4)));
+          y_points.push_back(map_waypoints_y[next_wp+1] + map_waypoints_dy[next_wp+1]*(2+(lane*4)));
+
+          tk::spline s; 
+          s.set_points(x_points, y_points);
+
+          double dist_inc = 0.35;
+          for(int i=0; i<50; i++)
+          {
+            next_x_vals.push_back(car_x+dist_inc);
+            next_y_vals.push_back(s(car_x+dist_inc));
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
