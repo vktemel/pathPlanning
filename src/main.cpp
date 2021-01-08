@@ -98,6 +98,24 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+          vector<double> x_pts;
+          vector<double> y_pts;
+
+          x_pts.push_back(car_x);
+          y_pts.push_back(car_y);
+          for(int i=0; i<3; i++)
+          {
+            vector<double> next_wp;
+
+            next_wp = getXY(car_s+(i+1)*10, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+            x_pts.push_back(next_wp[0]);
+            y_pts.push_back(next_wp[1]);
+          }
+
+          tk::spline s;
+          s.set_points(x_pts, y_pts);
+          
           double dist_inc = 0.35;
           for(int i=0; i<50; i++)
           {
@@ -107,8 +125,9 @@ int main() {
             vector<double> xy = getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             next_x_vals.push_back(xy[0]);
-            next_y_vals.push_back(xy[1]);
+            next_y_vals.push_back(s(xy[0]));
           }
+
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
