@@ -110,14 +110,14 @@ int main() {
             double s_obj = obj[5];
             double d_obj = obj[6];
 
-            if((s_obj > car_s) & (s_obj < car_s + 30) & (d_obj < 8) & (d_obj > 4)){
+            if((s_obj > car_s) & (s_obj < car_s + 20) & (d_obj < 8) & (d_obj > 4)){
               car_in_front = true;
               std::cout << "car detected in front, id: " << id_obj << std::endl;
             }
 
             if(car_in_front)
             {
-              v_car_in_front = sqrt(vx_obj*vx_obj+vy_obj*vy_obj)*3.6/1.6;
+              v_car_in_front = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
               std::cout << "speed of the car detected: " << v_car_in_front << std::endl;
               break;
             }
@@ -189,16 +189,29 @@ int main() {
           double t = 0.02; // s
           //double target_speed = 49.0*1.6/3.6; // m/s
 
-          double max_jerk = 2.0; // m/s^3
+          double max_jerk = 10.0; // m/s^3
 
           double prev_x = car_x; 
           double prev_y = car_y; 
           double prev_theta = deg2rad(car_yaw);
-          double prev_speed = car_speed;
+          double prev_speed = car_speed*1.6/3.6; // m/s
 
-          double target_speed = std::min(prev_speed+0.3, std::min(49.5, v_car_in_front-5)); // mph
+          double target_speed = prev_speed;
 
-          double dist_inc = target_speed*t*1.6/3.6;
+          double lim_speed = 49.5*1.6/3.6; 
+
+          std::cout << "prev speed: " << prev_speed << "\tspeed lim: " << lim_speed << "\tcar in front: " << v_car_in_front << std::endl;
+
+          if(prev_speed > v_car_in_front) {
+            target_speed = prev_speed-max_jerk*t*0.2;
+          }
+          else if(prev_speed < lim_speed){
+            target_speed = prev_speed+max_jerk*t;
+          }
+
+          //double target_speed = std::min(prev_speed+max_jerk*t, std::min(49.5, v_car_in_front)); // mph
+
+          double dist_inc = target_speed*t;
 
           for(int i=0; i<50; i++)
           {
