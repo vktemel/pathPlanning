@@ -8,6 +8,7 @@
 #include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include <algorithm>
 
 // for convenience
 using nlohmann::json;
@@ -157,7 +158,7 @@ int main() {
           std::cout << "car curr x, x: " << car_x << ", y: " << car_y << std::endl;
 
           double t = 0.02; 
-          double target_speed = 40; // mph
+          double target_speed = std::min(car_speed+0.3, 40.0); // mph
 
           double dist_inc = target_speed*t*1.6/3.6;
           
