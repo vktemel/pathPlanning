@@ -95,10 +95,8 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          bool car_in_front = false;
-          double v_car_in_front = 100;
-
-          
+          bool found_target = false;
+          double v_target_obj = 100;
 
           for(auto& obj : sensor_fusion)
           {
@@ -111,14 +109,9 @@ int main() {
             double d_obj = obj[6];
 
             if((s_obj > car_s) & (s_obj < car_s + 20) & (d_obj < 8) & (d_obj > 4)){
-              car_in_front = true;
+              found_target = true;
               std::cout << "car detected in front, id: " << id_obj << std::endl;
-            }
-
-            if(car_in_front)
-            {
-              v_car_in_front = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
-              std::cout << "speed of the car detected: " << v_car_in_front << std::endl;
+              v_target_obj = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
               break;
             }
           }
@@ -196,9 +189,9 @@ int main() {
 
           double lim_speed = 49.5*1.6/3.6; 
 
-          std::cout << "prev speed: " << prev_speed << "\tspeed lim: " << lim_speed << "\tcar in front: " << v_car_in_front << std::endl;
+          std::cout << "prev speed: " << prev_speed << "\tspeed lim: " << lim_speed << "\tcar in front: " << v_target_obj << std::endl;
 
-          if(prev_speed > v_car_in_front) {
+          if(prev_speed > v_target_obj) {
             target_speed = prev_speed-max_jerk*t*0.2;
           }
           else if(prev_speed < lim_speed){
