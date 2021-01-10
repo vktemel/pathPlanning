@@ -95,17 +95,43 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
+          bool car_in_front;
+          double v_car_in_front = 100;
+
+          for(auto& obj : sensor_fusion)
+          {
+            double id_obj = obj[0];
+            double x_obj = obj[1];
+            double y_obj = obj[2];
+            double vx_obj = obj[3];
+            double vy_obj = obj[4];
+            double s_obj = obj[5];
+            double d_obj = obj[6];
+
+            if((s_obj > car_s) & (s_obj < car_s + 30) & (d_obj < 8) & (d_obj > 4)){
+              car_in_front = true;
+              std::cout << "car detected in front, id: " << id_obj << std::endl;
+            }
+
+            if(car_in_front)
+            {
+              v_car_in_front = sqrt(vx_obj*vx_obj+vy_obj*vy_obj)*3.6/1.6;
+              std::cout << "speed of the car detected: " << v_car_in_front << std::endl;
+            }
+          }
+
+
           vector<double> x_pts; 
           vector<double> y_pts; 
 
           x_pts.push_back(car_x);
           y_pts.push_back(car_y);
 
-          std::cout << std::endl;
-          std::cout << "Entering Path Calculation" << std::endl;
+          //std::cout << std::endl;
+          //std::cout << "Entering Path Calculation" << std::endl;
 
           int prev_path_size = previous_path_y.size();
-          std::cout << "prev path size: " << prev_path_size << std::endl;
+          // std::cout << "prev path size: " << prev_path_size << std::endl;
 
           // Push previous back points for smoothening
           int prev_path_limit = 3;
@@ -120,7 +146,7 @@ int main() {
                 continue;
               }
 
-              std::cout << "prev path " << p << "th x: " << previous_path_x[p] << ", y: " << previous_path_y[p] << std::endl;
+              // std::cout << "prev path " << p << "th x: " << previous_path_x[p] << ", y: " << previous_path_y[p] << std::endl;
 
               x_pts.push_back(x_pt);
               y_pts.push_back(y_pt);
@@ -130,7 +156,7 @@ int main() {
           
           int next_wp_idx = NextWaypoint(car_x, car_y, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y);
 
-          std::cout << "next wp idx: " << next_wp_idx << std::endl;
+          // std::cout << "next wp idx: " << next_wp_idx << std::endl;
           
           for(int i=0; i<3; i++) {
 
@@ -146,26 +172,26 @@ int main() {
             x_pts.push_back(x_pt);
             y_pts.push_back(y_pt);
           }
-
+          /*
           for(int i=0; i<x_pts.size(); i++)
           {
             std::cout << i << "th point x: " << x_pts[i] << ", y: " << y_pts[i] << std::endl;
-          }
+          } */
 
           tk::spline s;
           s.set_points(x_pts, y_pts);
 
-          std::cout << "car curr x, x: " << car_x << ", y: " << car_y << std::endl;
+          //std::cout << "car curr x, x: " << car_x << ", y: " << car_y << std::endl;
 
           double t = 0.02; 
-          double target_speed = std::min(car_speed+0.3, 40.0); // mph
+          double target_speed = std::min(car_speed+0.3, std::min(49.5, v_car_in_front)); // mph
 
           double dist_inc = target_speed*t*1.6/3.6;
           
           double prev_x = car_x; 
           double prev_y = car_y; 
           double prev_theta = deg2rad(car_yaw);
-          
+
           for(int i=0; i<50; i++)
           {
             double next_x = prev_x + dist_inc*cos(prev_theta);
@@ -173,9 +199,9 @@ int main() {
 
             double dist = distance(prev_x, prev_y, next_x, next_y); 
 
-            if(i < 10) {
-              std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
-            }
+            //if(i < 2) {
+            //  std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
+            //}
 
             prev_theta = atan2(next_y-prev_y,next_x-prev_x);
             prev_x = next_x;
