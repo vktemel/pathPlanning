@@ -156,15 +156,11 @@ int main() {
             }
           }
           
-          
-          int next_wp_idx = NextWaypoint(car_x, car_y, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y);
-
-          // std::cout << "next wp idx: " << next_wp_idx << std::endl;
-          
           for(int i=0; i<3; i++) {
+            vector<double> xy = getXY(car_s+(i+1)*20, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-            double x_pt = map_waypoints_x[next_wp_idx+i]+map_waypoints_dx[next_wp_idx+i]*6;
-            double y_pt = map_waypoints_y[next_wp_idx+i]+map_waypoints_dy[next_wp_idx+i]*6;
+            double x_pt = xy[0];
+            double y_pt = xy[1];
 
             double last_x_point = x_pts.back();
 
