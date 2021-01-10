@@ -95,11 +95,16 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
+          // Scan for targets
+          // Initialize flag for finding a target to false, and speed of target to 100 m/s.
           bool found_target = false;
-          double v_target_obj = 100;
+          double v_target_obj = 100; // m/s
+          double dist_target_obj = 1000; // m
 
+          // Scan all of sensor_fusion list for relevant targets
           for(auto& obj : sensor_fusion)
           {
+            //Extract object information
             double id_obj = obj[0];
             double x_obj = obj[1];
             double y_obj = obj[2];
@@ -108,28 +113,35 @@ int main() {
             double s_obj = obj[5];
             double d_obj = obj[6];
 
+            // If an object is ahead of vehicle, but not too far ahead, 
+            // And if it's in the same lane as ego vehicle
             if((s_obj > car_s) & (s_obj < car_s + 20) & (d_obj < 8) & (d_obj > 4)){
-              found_target = true;
-              std::cout << "car detected in front, id: " << id_obj << std::endl;
+              // Set the distance to the target and estimate speed of the object based 
+              // on velocity vectors in x and y. 
+              dist_target_obj = abs(car_s-s_obj); // m
               v_target_obj = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
+              
+              // Stop scanning
               break;
             }
           }
 
-
+          // Initialize x and y points to create a rough trajectory. These points will be then
+          // used in a spline to have a smoothened trajectory. 
           vector<double> x_pts; 
           vector<double> y_pts; 
 
+          // The first point to consider is the car's current position
           x_pts.push_back(car_x);
           y_pts.push_back(car_y);
 
-          //std::cout << std::endl;
-          //std::cout << "Entering Path Calculation" << std::endl;
+          // In order to have a smoothened behavior, points from previous path can be added
+          // to the generation of spline, so there are no immediate jerky movements. 
 
+          // Get the size of the previous path.
           int prev_path_size = previous_path_y.size();
-          // std::cout << "prev path size: " << prev_path_size << std::endl;
 
-          // Push previous back points for smoothening
+          // Push previous path points for smoothening
           int prev_path_limit = 3;
           if(prev_path_size > prev_path_limit)
           {
@@ -137,12 +149,14 @@ int main() {
               double x_pt = previous_path_x[p];
               double y_pt = previous_path_y[p];
 
-              if(x_pt < x_pts.back())
+              vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y);
+  
+
+              // if the found point is behind the vehicle, then ignore
+              if(car_s > frenetCoord[0])
               {
                 continue;
               }
-
-              // std::cout << "prev path " << p << "th x: " << previous_path_x[p] << ", y: " << previous_path_y[p] << std::endl;
 
               x_pts.push_back(x_pt);
               y_pts.push_back(y_pt);
