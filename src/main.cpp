@@ -95,8 +95,10 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          bool car_in_front;
+          bool car_in_front = false;
           double v_car_in_front = 100;
+
+          
 
           for(auto& obj : sensor_fusion)
           {
@@ -117,6 +119,7 @@ int main() {
             {
               v_car_in_front = sqrt(vx_obj*vx_obj+vy_obj*vy_obj)*3.6/1.6;
               std::cout << "speed of the car detected: " << v_car_in_front << std::endl;
+              break;
             }
           }
 
@@ -183,14 +186,19 @@ int main() {
 
           //std::cout << "car curr x, x: " << car_x << ", y: " << car_y << std::endl;
 
-          double t = 0.02; 
-          double target_speed = std::min(car_speed+0.3, std::min(49.5, v_car_in_front)); // mph
+          double t = 0.02; // s
+          //double target_speed = 49.0*1.6/3.6; // m/s
 
-          double dist_inc = target_speed*t*1.6/3.6;
-          
+          double max_jerk = 2.0; // m/s^3
+
           double prev_x = car_x; 
           double prev_y = car_y; 
           double prev_theta = deg2rad(car_yaw);
+          double prev_speed = car_speed;
+
+          double target_speed = std::min(prev_speed+0.3, std::min(49.5, v_car_in_front-5)); // mph
+
+          double dist_inc = target_speed*t*1.6/3.6;
 
           for(int i=0; i<50; i++)
           {
@@ -202,12 +210,12 @@ int main() {
             //if(i < 2) {
             //  std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
             //}
+            next_x_vals.push_back(next_x);
+            next_y_vals.push_back(next_y);
 
             prev_theta = atan2(next_y-prev_y,next_x-prev_x);
             prev_x = next_x;
             prev_y = next_y; 
-            next_x_vals.push_back(next_x);
-            next_y_vals.push_back(next_y);
           }
 
           msgJson["next_x"] = next_x_vals;
