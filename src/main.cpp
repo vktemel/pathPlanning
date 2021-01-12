@@ -131,6 +131,10 @@ int main() {
           vector<double> x_pts; 
           vector<double> y_pts; 
 
+          double ref_x = car_x;
+          double ref_y = car_y;
+          double ref_yaw = deg2rad(car_yaw);
+
           // The first point to consider is the car's current position
           x_pts.push_back(car_x);
           y_pts.push_back(car_y);
@@ -151,7 +155,6 @@ int main() {
 
               vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y);
   
-
               // if the found point is behind the vehicle, then ignore
               if(car_s > frenetCoord[0])
               {
@@ -169,33 +172,32 @@ int main() {
             double x_pt = xy[0];
             double y_pt = xy[1];
 
-            double last_x_point = x_pts.back();
-
-            if(x_pt < last_x_point) {
-              continue;
-            }
-
             x_pts.push_back(x_pt);
             y_pts.push_back(y_pt);
           }
-          /*
+
           for(int i=0; i<x_pts.size(); i++)
           {
-            std::cout << i << "th point x: " << x_pts[i] << ", y: " << y_pts[i] << std::endl;
-          } */
+            double transformed_x = (x_pts[i]-ref_x)*cos(-ref_yaw)-(y_pts[i]-ref_y)*sin(-ref_yaw);
+            double transformed_y = (x_pts[i]-ref_x)*sin(-ref_yaw)+(y_pts[i]-ref_y)*cos(-ref_yaw);
+
+            std::cout << i << "th pt:\tx: " << x_pts[i] <<"\ty: " << y_pts[i] << "\t after x: " << transformed_x << "\t y: "<<transformed_y << std::endl;
+
+            x_pts[i] = transformed_x;
+            y_pts[i] = transformed_y; 
+          }
 
           tk::spline s;
           s.set_points(x_pts, y_pts);
 
-          //std::cout << "car curr x, x: " << car_x << ", y: " << car_y << std::endl;
-
           double t = 0.02; // s
-          //double target_speed = 49.0*1.6/3.6; // m/s
-
           double max_jerk = 10.0; // m/s^3
 
-          double prev_x = car_x; 
-          double prev_y = car_y; 
+          double prev_x = 0;
+          double prev_y = 0;
+
+          //double prev_x = car_x; 
+          //double prev_y = car_y; 
           double prev_theta = deg2rad(car_yaw);
           double prev_speed = car_speed*1.6/3.6; // m/s
 
@@ -205,7 +207,7 @@ int main() {
 
           std::cout << "prev speed: " << prev_speed << "\tspeed lim: " << lim_speed << "\tcar in front: " << v_target_obj << std::endl;
 
-          if(prev_speed > v_target_obj) {
+          if(prev_speed > v_target_obj*0.98) {
             target_speed = prev_speed-max_jerk*t*0.2;
           }
           else if(prev_speed < lim_speed){
@@ -218,20 +220,29 @@ int main() {
 
           for(int i=0; i<50; i++)
           {
-            double next_x = prev_x + dist_inc*cos(prev_theta);
-            double next_y = s(next_x);
+            double next_x = prev_x + dist_inc;
+            double next_y = s(next_x); 
+            //double next_x = prev_x + dist_inc*cos(prev_theta);
+            //double next_y = s(next_x);
 
             double dist = distance(prev_x, prev_y, next_x, next_y); 
 
-            //if(i < 2) {
-            //  std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
-            //}
-            next_x_vals.push_back(next_x);
-            next_y_vals.push_back(next_y);
+            if(i < 10) {
+              std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
+            }
 
             prev_theta = atan2(next_y-prev_y,next_x-prev_x);
             prev_x = next_x;
             prev_y = next_y; 
+
+            next_x = ref_x + (prev_x*cos(ref_yaw) - prev_y*sin(ref_yaw));
+            next_y = ref_y + (prev_x*sin(ref_yaw) + prev_y*cos(ref_yaw));
+
+            next_x_vals.push_back(next_x);
+            next_y_vals.push_back(next_y);
+
+            
+            
           }
 
           msgJson["next_x"] = next_x_vals;
