@@ -50,8 +50,6 @@ class State{
   VehicleStates name;
   int lane;
   double speed;
-  vector<double> x_pts;
-  vector<double> y_pts;
 };
 class Vehicle {
   public:
@@ -95,7 +93,7 @@ VehicleStates select_state(Vehicle veh){
   return state;
 };
 
-void transform_traj_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
+void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
 {
   for(int i=0; i<x.size(); i++)
   {
@@ -160,7 +158,7 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
 
   }
   
-  transform_traj_to_ego_coord(x_pts, y_pts, veh);
+  transform_pts_to_ego_coord(x_pts, y_pts, veh);
 
   for(int i=0; i<x_pts.size(); i++)
   {
