@@ -233,19 +233,7 @@ int main() {
           vector<double> next_y_vals;
 
           VehicleStates next_state = select_state(ego);
-          if(next_state == VehicleStates::LaneChangeLeft)
-          {
-            ego.lane -= 1;
-          }
-          else if(next_state == VehicleStates::LaneChangeRight)
-          {
-            ego.lane += 1;
-          }
-
-          int lane = ego.lane;
-
-          //double lane = 1;
-
+          
           // Scan for targets
           // Initialize flag for finding a target to false, and speed of target to 100 m/s.
           bool found_target = false;
@@ -266,7 +254,7 @@ int main() {
 
             // If an object is ahead of vehicle, but not too far ahead, 
             // And if it's in the same lane as ego vehicle
-            if((s_obj > ego.s) & (s_obj < ego.s + 20) & (d_obj < lane*4+4) & (d_obj > lane*4)){
+            if((s_obj > ego.s) & (s_obj < ego.s + 20) & (d_obj < ego.lane*4+4) & (d_obj > ego.lane*4)){
               // Set the distance to the target and estimate speed of the object based 
               // on velocity vectors in x and y. 
               dist_target_obj = abs(ego.s-s_obj); // m
@@ -318,7 +306,7 @@ int main() {
           }
           
           for(int i=0; i<3; i++) {
-            vector<double> xy = getXY(ego.s+(i+1)*20, 2+lane*4, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> xy = getXY(ego.s+(i+1)*20, 2+ego.lane*4, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double x_pt = xy[0];
             double y_pt = xy[1];
