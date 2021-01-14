@@ -83,6 +83,7 @@ void Vehicle::set_values(double x_in, double y_in, double s_in, double d_in, dou
 }
 
 VehicleStates select_state(Vehicle veh){
+  // return the minimum cost of all successor states
   VehicleStates state;
 
   if((veh.curr_state.name == VehicleStates::KeepLane) & (veh.lane == 1) & (veh.speed > 20))
@@ -171,6 +172,25 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
   return s;
 };
 
+vector<VehicleStates> find_successor_states(VehicleStates curr_state){
+  vector<VehicleStates> successor_states;
+
+  successor_states.push_back(VehicleStates::KeepLane);
+  if(curr_state == VehicleStates::KeepLane) {
+    successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
+    successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+  }
+  else if(curr_state == VehicleStates::PrepareLaneChangeRight) {
+    successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+    successor_states.push_back(VehicleStates::LaneChangeRight);
+  }
+  else if(curr_state == VehicleStates::PrepareLaneChangeLeft) {
+    successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
+    successor_states.push_back(VehicleStates::LaneChangeLeft);
+  }
+
+  return successor_states;
+};
 
 void evaluate_successor_states(){};
 
@@ -250,8 +270,6 @@ int main() {
 
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-
-          VehicleStates next_state = select_state(ego);
 
           // Scan for targets
           // Initialize flag for finding a target to false, and speed of target to 100 m/s.
