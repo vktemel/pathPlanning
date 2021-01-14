@@ -15,16 +15,145 @@ using nlohmann::json;
 using std::string;
 using std::vector;
 
+/* what needs to be in vehicle state? 
+- State name, i.e. KeepLane, LaneChangeLeft
+- Vehicle speed
+- Lane
+
+- Future state needs to have:
+-- Target state
+-- Target speed
+-- Target lane
+
+Example: Initial state is KeepLane. Possible states from that are KeepLane, PrepLaneChangeLeft or PrepLaneChangeRight
+KeepLaneCosts are proportional to
+- Speed of Lane
+
+If PLCL is selected, then the vehicle needs to adjust speed in the given trajectory; but shouldn't necessarily change
+selected lane. So the waypoint calculation will still be the same.
+
+If LCL is selected, then the waypoints should refer to the left lane in some point in future. 
+
+*/ 
+
+enum VehicleStates {
+  KeepLane,
+  PrepareLaneChangeLeft, 
+  PrepareLaneChangeRight,
+  LaneChangeLeft,
+  LaneChangeRight
+};
+
+
+class State{
+  public:
+  VehicleStates name;
+  int lane;
+  double speed;
+  vector<double> x_pts;
+  vector<double> y_pts;
+};
 class Vehicle {
   public:
+  void set_values(double x, double y, double s, double d, double yaw, double speed);
+  
+  // Initialization of Vehicle Class
+  Vehicle() :
+  x(0.0F), y(0.0F), s(0.0F), d(0.0F), yaw(0.0F), speed(0.0F),
+  lane(1.0F)
+  {}
+
   double x;
   double y;
   double s;
   double d;
   double yaw;
-  double prev_speed;
+  double speed;
+  State curr_state;
+  State next_state;
   int lane;
 };
+
+void Vehicle::set_values(double x_in, double y_in, double s_in, double d_in, double yaw_in, double speed_in)
+{
+  x = x_in; 
+  y = y_in;
+  s = s_in;
+  d = d_in;
+  yaw = yaw_in;
+  speed = speed_in;
+}
+
+VehicleStates select_state(Vehicle veh){
+  VehicleStates state;
+
+  if((veh.curr_state.name == VehicleStates::KeepLane) & (veh.lane == 1) & (veh.speed > 20))
+  {
+    state = VehicleStates::LaneChangeLeft;
+  }
+
+  return state;
+};
+
+
+void generate_state_trajectory(State &state, const Vehicle veh, 
+                               const vector<double> prev_path_x, const vector<double> prev_path_y, 
+                               const vector<double> map_wp_x, const vector<double> map_wp_y, const vector<double> map_wp_s){
+  
+  // The first point to consider is the car's current position
+  state.x_pts.push_back(veh.x);
+  state.x_pts.push_back(veh.y);
+
+  // In order to have a smoothened behavior, points from previous path can be added
+  // to the generation of spline, so there are no immediate jerky movements. 
+
+  // Get the size of the previous path.
+  int prev_path_size = prev_path_y.size();
+
+  // Push previous path points for smoothening
+  int prev_path_limit = 3;
+  if(prev_path_size > prev_path_limit){
+    for(int p=0; p<prev_path_limit; p++) {
+      double x_pt = prev_path_x[p];
+      double y_pt = prev_path_y[p];
+
+      vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(veh.yaw), map_wp_x, map_wp_y);
+  
+      // if the found point is behind the vehicle, then ignore
+      if(veh.s > frenetCoord[0])
+      {
+        continue;
+      }
+
+      state.x_pts.push_back(x_pt);
+      state.y_pts.push_back(y_pt);
+    }
+  }
+          
+  for(int i=0; i<3; i++) {
+    vector<double> xy = getXY(veh.s+(i+1)*20, 2+state.lane*4, map_wp_s, map_wp_x, map_wp_y);
+
+    double x_pt = xy[0];
+    double y_pt = xy[1];
+
+    state.x_pts.push_back(x_pt);
+    state.y_pts.push_back(y_pt);
+  }
+};
+
+void transform_traj_to_ego_coord(vector<double> &x, vector<double> &y, double ref_x, double ref_y, double ref_theta)
+{
+  for(int i=0; i<x.size(); i++)
+  {
+    double transformed_x = (x[i]-ref_x)*cos(-ref_theta)-(y[i]-ref_y)*sin(-ref_theta);
+    double transformed_y = (x[i]-ref_x)*sin(-ref_theta)+(y[i]-ref_y)*cos(-ref_theta);
+
+    x[i] = transformed_x;
+    y[i] = transformed_y; 
+  }
+};
+
+void evaluate_successor_states(){};
 
 int main() {
   uWS::Hub h;
@@ -64,6 +193,7 @@ int main() {
   }
 
   Vehicle ego;
+  ego.lane = 1;
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy, &ego]
@@ -84,13 +214,8 @@ int main() {
         if (event == "telemetry") {
           // j[1] is the data JSON object
           // Main car's localization Data
-          ego.x = j[1]["x"];
-          ego.y = j[1]["y"];
-          ego.s = j[1]["s"];
-          ego.d = j[1]["d"];
-          ego.yaw = j[1]["yaw"];
-          ego.prev_speed = j[1]["speed"];
-          
+          ego.set_values(j[1]["x"], j[1]["y"], j[1]["s"], j[1]["d"], j[1]["yaw"], j[1]["speed"]);
+
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
           auto previous_path_y = j[1]["previous_path_y"];
@@ -107,7 +232,19 @@ int main() {
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          double lane = 0;
+          VehicleStates next_state = select_state(ego);
+          if(next_state == VehicleStates::LaneChangeLeft)
+          {
+            ego.lane -= 1;
+          }
+          else if(next_state == VehicleStates::LaneChangeRight)
+          {
+            ego.lane += 1;
+          }
+
+          int lane = ego.lane;
+
+          //double lane = 1;
 
           // Scan for targets
           // Initialize flag for finding a target to false, and speed of target to 100 m/s.
@@ -181,7 +318,7 @@ int main() {
           }
           
           for(int i=0; i<3; i++) {
-            vector<double> xy = getXY(ego.s+(i+1)*20, 2+lane*2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> xy = getXY(ego.s+(i+1)*20, 2+lane*4, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double x_pt = xy[0];
             double y_pt = xy[1];
@@ -190,14 +327,7 @@ int main() {
             y_pts.push_back(y_pt);
           }
 
-          for(int i=0; i<x_pts.size(); i++)
-          {
-            double transformed_x = (x_pts[i]-ref_x)*cos(-ref_yaw)-(y_pts[i]-ref_y)*sin(-ref_yaw);
-            double transformed_y = (x_pts[i]-ref_x)*sin(-ref_yaw)+(y_pts[i]-ref_y)*cos(-ref_yaw);
-
-            x_pts[i] = transformed_x;
-            y_pts[i] = transformed_y; 
-          }
+          transform_traj_to_ego_coord(x_pts, y_pts, ref_x, ref_y, ref_yaw);
 
           tk::spline s;
           s.set_points(x_pts, y_pts);
@@ -208,7 +338,7 @@ int main() {
           double prev_x = 0;
           double prev_y = 0;
           double prev_theta = deg2rad(ego.yaw);
-          double prev_speed = ego.prev_speed*1.6/3.6; // m/s
+          double prev_speed = ego.speed*1.6/3.6; // m/s
 
           double target_speed = prev_speed;
 
