@@ -95,14 +95,31 @@ VehicleStates select_state(Vehicle veh){
   return state;
 };
 
+void transform_traj_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
+{
+  for(int i=0; i<x.size(); i++)
+  {
+    double transformed_x = (x[i]-ego.x)*cos(-deg2rad(ego.yaw))-(y[i]-ego.y)*sin(-deg2rad(ego.yaw));
+    double transformed_y = (x[i]-ego.x)*sin(-deg2rad(ego.yaw))+(y[i]-ego.y)*cos(-deg2rad(ego.yaw));
 
-void generate_state_trajectory(State &state, const Vehicle veh, 
+    x[i] = transformed_x;
+    y[i] = transformed_y; 
+  }
+};
+
+tk::spline generate_state_spline(int target_lane, const Vehicle veh, 
                                const vector<double> prev_path_x, const vector<double> prev_path_y, 
                                const vector<double> map_wp_x, const vector<double> map_wp_y, const vector<double> map_wp_s){
   
   // The first point to consider is the car's current position
-  state.x_pts.push_back(veh.x);
-  state.x_pts.push_back(veh.y);
+
+  vector<double> x_pts;
+  vector<double> y_pts;
+
+  x_pts.push_back(veh.x);
+  y_pts.push_back(veh.y);
+
+  std::cout<<"veh x: " << veh.x << "\ty: " << veh.y << std::endl;
 
   // In order to have a smoothened behavior, points from previous path can be added
   // to the generation of spline, so there are no immediate jerky movements. 
@@ -125,33 +142,37 @@ void generate_state_trajectory(State &state, const Vehicle veh,
         continue;
       }
 
-      state.x_pts.push_back(x_pt);
-      state.y_pts.push_back(y_pt);
+      std::cout << "prev " << p << ", x: " << x_pt << "\ty: " << y_pt << std::endl;
+
+      x_pts.push_back(x_pt);
+      y_pts.push_back(y_pt);
     }
   }
           
   for(int i=0; i<3; i++) {
-    vector<double> xy = getXY(veh.s+(i+1)*20, 2+state.lane*4, map_wp_s, map_wp_x, map_wp_y);
+    vector<double> xy = getXY(veh.s+(i+1)*20, 2+target_lane*4, map_wp_s, map_wp_x, map_wp_y);
 
     double x_pt = xy[0];
     double y_pt = xy[1];
 
-    state.x_pts.push_back(x_pt);
-    state.y_pts.push_back(y_pt);
-  }
-};
+    x_pts.push_back(x_pt);
+    y_pts.push_back(y_pt);
 
-void transform_traj_to_ego_coord(vector<double> &x, vector<double> &y, double ref_x, double ref_y, double ref_theta)
-{
-  for(int i=0; i<x.size(); i++)
+  }
+  
+  transform_traj_to_ego_coord(x_pts, y_pts, veh);
+
+  for(int i=0; i<x_pts.size(); i++)
   {
-    double transformed_x = (x[i]-ref_x)*cos(-ref_theta)-(y[i]-ref_y)*sin(-ref_theta);
-    double transformed_y = (x[i]-ref_x)*sin(-ref_theta)+(y[i]-ref_y)*cos(-ref_theta);
-
-    x[i] = transformed_x;
-    y[i] = transformed_y; 
+    std::cout << x_pts[i] << "\t" << y_pts[i] << std::endl;
   }
+
+  tk::spline s;
+  s.set_points(x_pts, y_pts);
+
+  return s;
 };
+
 
 void evaluate_successor_states(){};
 
@@ -233,7 +254,7 @@ int main() {
           vector<double> next_y_vals;
 
           VehicleStates next_state = select_state(ego);
-          
+
           // Scan for targets
           // Initialize flag for finding a target to false, and speed of target to 100 m/s.
           bool found_target = false;
@@ -274,51 +295,10 @@ int main() {
           double ref_y = ego.y;
           double ref_yaw = deg2rad(ego.yaw);
 
-          // The first point to consider is the car's current position
-          x_pts.push_back(ego.x);
-          y_pts.push_back(ego.y);
-
-          // In order to have a smoothened behavior, points from previous path can be added
-          // to the generation of spline, so there are no immediate jerky movements. 
-
-          // Get the size of the previous path.
-          int prev_path_size = previous_path_y.size();
-
-          // Push previous path points for smoothening
-          int prev_path_limit = 3;
-          if(prev_path_size > prev_path_limit)
-          {
-            for(int p=0; p<prev_path_limit; p++) {
-              double x_pt = previous_path_x[p];
-              double y_pt = previous_path_y[p];
-
-              vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(ego.yaw), map_waypoints_x, map_waypoints_y);
-  
-              // if the found point is behind the vehicle, then ignore
-              if(ego.s > frenetCoord[0])
-              {
-                continue;
-              }
-
-              x_pts.push_back(x_pt);
-              y_pts.push_back(y_pt);
-            }
-          }
-          
-          for(int i=0; i<3; i++) {
-            vector<double> xy = getXY(ego.s+(i+1)*20, 2+ego.lane*4, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-
-            double x_pt = xy[0];
-            double y_pt = xy[1];
-
-            x_pts.push_back(x_pt);
-            y_pts.push_back(y_pt);
-          }
-
-          transform_traj_to_ego_coord(x_pts, y_pts, ref_x, ref_y, ref_yaw);
+          int target_lane = 1;
 
           tk::spline s;
-          s.set_points(x_pts, y_pts);
+          s = generate_state_spline(target_lane, ego, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
           double t = 0.02; // s
           double max_jerk = 10.0; // m/s^3
@@ -358,8 +338,8 @@ int main() {
             prev_x = next_x;
             prev_y = next_y; 
 
-            next_x = ref_x + (prev_x*cos(ref_yaw) - prev_y*sin(ref_yaw));
-            next_y = ref_y + (prev_x*sin(ref_yaw) + prev_y*cos(ref_yaw));
+            next_x = ego.x + (prev_x*cos(ref_yaw) - prev_y*sin(ref_yaw));
+            next_y = ego.y + (prev_x*sin(ref_yaw) + prev_y*cos(ref_yaw));
 
             next_x_vals.push_back(next_x);
             next_y_vals.push_back(next_y);
