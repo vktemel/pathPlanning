@@ -192,7 +192,52 @@ vector<VehicleStates> find_successor_states(VehicleStates curr_state){
   return successor_states;
 };
 
-void evaluate_successor_states(){};
+VehicleStates evaluate_successor_states(vector<VehicleStates> successor_states, Vehicle ego){
+  VehicleStates min_cost_state;
+
+  // If there is a vehicle ahead of the vehicle, change lane
+  int lane = 1;
+  //bool vehicle_ahead = check_vehicle_in_lane()
+
+
+  std::cout << "min cost state: " << min_cost_state << std::endl;
+  return min_cost_state;
+
+};
+
+vector<double> check_vehicle_in_lane(const int lane, const vector<vector<double>> sensor_fusion, const Vehicle ego){
+  vector<double> obj_in_lane;
+  
+  // Scan all of sensor_fusion list for relevant targets
+  for(auto& obj : sensor_fusion)
+  {
+    //Extract object information
+    double id_obj = obj[0];
+    double x_obj = obj[1];
+    double y_obj = obj[2];
+    double vx_obj = obj[3];
+    double vy_obj = obj[4];
+    double s_obj = obj[5];
+    double d_obj = obj[6];
+
+    // If an object is ahead of vehicle, but not too far ahead, 
+    // And if it's in the same lane as ego vehicle
+    if((s_obj > ego.s) & (s_obj < ego.s + 20) & (d_obj < lane*4+4) & (d_obj > lane*4)){
+      // Set the distance to the target and estimate speed of the object based 
+      // on velocity vectors in x and y. 
+      obj_in_lane.push_back(id_obj);
+      obj_in_lane.push_back(x_obj);
+      obj_in_lane.push_back(y_obj);
+      obj_in_lane.push_back(vx_obj);
+      obj_in_lane.push_back(vy_obj);
+      obj_in_lane.push_back(s_obj);
+      obj_in_lane.push_back(d_obj);
+      // Stop scanning
+      break;
+    }
+  }
+  return obj_in_lane;
+}
 
 int main() {
   uWS::Hub h;
@@ -277,30 +322,15 @@ int main() {
           double v_target_obj = 100; // m/s
           double dist_target_obj = 1000; // m
 
-          // Scan all of sensor_fusion list for relevant targets
-          for(auto& obj : sensor_fusion)
-          {
-            //Extract object information
-            double id_obj = obj[0];
-            double x_obj = obj[1];
-            double y_obj = obj[2];
-            double vx_obj = obj[3];
-            double vy_obj = obj[4];
-            double s_obj = obj[5];
-            double d_obj = obj[6];
+          vector<double> obj_ahead = check_vehicle_in_lane(ego.lane, sensor_fusion, ego);
 
-            // If an object is ahead of vehicle, but not too far ahead, 
-            // And if it's in the same lane as ego vehicle
-            if((s_obj > ego.s) & (s_obj < ego.s + 20) & (d_obj < ego.lane*4+4) & (d_obj > ego.lane*4)){
-              // Set the distance to the target and estimate speed of the object based 
-              // on velocity vectors in x and y. 
-              dist_target_obj = abs(ego.s-s_obj); // m
-              v_target_obj = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
-              
-              // Stop scanning
-              break;
-            }
+          if(obj_ahead.size() > 0){
+            dist_target_obj = abs(ego.s-obj_ahead[5]); // m
+            v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
           }
+          
+          
+          std::cout << "stored object ahead" << std::endl;
 
           // Initialize x and y points to create a rough trajectory. These points will be then
           // used in a spline to have a smoothened trajectory. 
