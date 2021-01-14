@@ -15,6 +15,17 @@ using nlohmann::json;
 using std::string;
 using std::vector;
 
+class Vehicle {
+  public:
+  double x;
+  double y;
+  double s;
+  double d;
+  double yaw;
+  double prev_speed;
+  int lane;
+};
+
 int main() {
   uWS::Hub h;
 
@@ -52,8 +63,10 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  Vehicle ego;
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+               &map_waypoints_dx,&map_waypoints_dy, &ego]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -70,15 +83,14 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
           // Main car's localization Data
-          double car_x = j[1]["x"];
-          double car_y = j[1]["y"];
-          double car_s = j[1]["s"];
-          double car_d = j[1]["d"];
-          double car_yaw = j[1]["yaw"];
-          double car_speed = j[1]["speed"];
-
+          ego.x = j[1]["x"];
+          ego.y = j[1]["y"];
+          ego.s = j[1]["s"];
+          ego.d = j[1]["d"];
+          ego.yaw = j[1]["yaw"];
+          ego.prev_speed = j[1]["speed"];
+          
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
           auto previous_path_y = j[1]["previous_path_y"];
@@ -94,6 +106,8 @@ int main() {
 
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+
+          double lane = 0;
 
           // Scan for targets
           // Initialize flag for finding a target to false, and speed of target to 100 m/s.
@@ -115,10 +129,10 @@ int main() {
 
             // If an object is ahead of vehicle, but not too far ahead, 
             // And if it's in the same lane as ego vehicle
-            if((s_obj > car_s) & (s_obj < car_s + 20) & (d_obj < 8) & (d_obj > 4)){
+            if((s_obj > ego.s) & (s_obj < ego.s + 20) & (d_obj < lane*4+4) & (d_obj > lane*4)){
               // Set the distance to the target and estimate speed of the object based 
               // on velocity vectors in x and y. 
-              dist_target_obj = abs(car_s-s_obj); // m
+              dist_target_obj = abs(ego.s-s_obj); // m
               v_target_obj = sqrt(vx_obj*vx_obj+vy_obj*vy_obj); // m/s
               
               // Stop scanning
@@ -131,13 +145,13 @@ int main() {
           vector<double> x_pts; 
           vector<double> y_pts; 
 
-          double ref_x = car_x;
-          double ref_y = car_y;
-          double ref_yaw = deg2rad(car_yaw);
+          double ref_x = ego.x;
+          double ref_y = ego.y;
+          double ref_yaw = deg2rad(ego.yaw);
 
           // The first point to consider is the car's current position
-          x_pts.push_back(car_x);
-          y_pts.push_back(car_y);
+          x_pts.push_back(ego.x);
+          y_pts.push_back(ego.y);
 
           // In order to have a smoothened behavior, points from previous path can be added
           // to the generation of spline, so there are no immediate jerky movements. 
@@ -153,10 +167,10 @@ int main() {
               double x_pt = previous_path_x[p];
               double y_pt = previous_path_y[p];
 
-              vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(car_yaw), map_waypoints_x, map_waypoints_y);
+              vector<double> frenetCoord = getFrenet(x_pt, y_pt, deg2rad(ego.yaw), map_waypoints_x, map_waypoints_y);
   
               // if the found point is behind the vehicle, then ignore
-              if(car_s > frenetCoord[0])
+              if(ego.s > frenetCoord[0])
               {
                 continue;
               }
@@ -167,7 +181,7 @@ int main() {
           }
           
           for(int i=0; i<3; i++) {
-            vector<double> xy = getXY(car_s+(i+1)*20, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> xy = getXY(ego.s+(i+1)*20, 2+lane*2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             double x_pt = xy[0];
             double y_pt = xy[1];
@@ -181,8 +195,6 @@ int main() {
             double transformed_x = (x_pts[i]-ref_x)*cos(-ref_yaw)-(y_pts[i]-ref_y)*sin(-ref_yaw);
             double transformed_y = (x_pts[i]-ref_x)*sin(-ref_yaw)+(y_pts[i]-ref_y)*cos(-ref_yaw);
 
-            std::cout << i << "th pt:\tx: " << x_pts[i] <<"\ty: " << y_pts[i] << "\t after x: " << transformed_x << "\t y: "<<transformed_y << std::endl;
-
             x_pts[i] = transformed_x;
             y_pts[i] = transformed_y; 
           }
@@ -195,11 +207,8 @@ int main() {
 
           double prev_x = 0;
           double prev_y = 0;
-
-          //double prev_x = car_x; 
-          //double prev_y = car_y; 
-          double prev_theta = deg2rad(car_yaw);
-          double prev_speed = car_speed*1.6/3.6; // m/s
+          double prev_theta = deg2rad(ego.yaw);
+          double prev_speed = ego.prev_speed*1.6/3.6; // m/s
 
           double target_speed = prev_speed;
 
@@ -227,10 +236,6 @@ int main() {
 
             double dist = distance(prev_x, prev_y, next_x, next_y); 
 
-            if(i < 10) {
-              std::cout << "car @ " << i << "th x: " << next_x << ", y: " << next_y << ", dist: " << dist << ", spd: " << dist/0.02 << ", prev theta: " << prev_theta << std::endl;
-            }
-
             prev_theta = atan2(next_y-prev_y,next_x-prev_x);
             prev_x = next_x;
             prev_y = next_y; 
@@ -240,9 +245,6 @@ int main() {
 
             next_x_vals.push_back(next_x);
             next_y_vals.push_back(next_y);
-
-            
-            
           }
 
           msgJson["next_x"] = next_x_vals;
