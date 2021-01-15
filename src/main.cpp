@@ -72,7 +72,7 @@ class Vehicle {
   int lane;
 };
 
-void Vehicle::set_values(double x_in, double y_in, double s_in, double d_in, double yaw_in, double speed_in)
+void Vehicle::set_values(const double x_in, const double y_in, const double s_in, const double d_in, const double yaw_in, const double speed_in)
 {
   x = x_in; 
   y = y_in;
@@ -82,11 +82,11 @@ void Vehicle::set_values(double x_in, double y_in, double s_in, double d_in, dou
   speed = speed_in;
 }
 
-VehicleStates select_state(Vehicle veh){
+VehicleStates select_state(const Vehicle ego){
   // return the minimum cost of all successor states
   VehicleStates state;
 
-  if((veh.curr_state.name == VehicleStates::KeepLane) & (veh.lane == 1) & (veh.speed > 20))
+  if((ego.curr_state.name == VehicleStates::KeepLane) & (ego.lane == 1) & (ego.speed > 20))
   {
     state = VehicleStates::LaneChangeLeft;
   }
@@ -172,19 +172,23 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
   return s;
 };
 
-vector<VehicleStates> find_successor_states(VehicleStates curr_state){
+vector<VehicleStates> find_successor_states(State curr_state, const Vehicle veh){
   vector<VehicleStates> successor_states;
 
   successor_states.push_back(VehicleStates::KeepLane);
-  if(curr_state == VehicleStates::KeepLane) {
-    successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
-    successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+  if(curr_state.name == VehicleStates::KeepLane) {
+    if(veh.lane != 0) {
+      successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
+    }
+    if(veh.lane != 2) {
+      successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+    }
   }
-  else if(curr_state == VehicleStates::PrepareLaneChangeRight) {
+  else if(curr_state.name == VehicleStates::PrepareLaneChangeRight) {
     successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
     successor_states.push_back(VehicleStates::LaneChangeRight);
   }
-  else if(curr_state == VehicleStates::PrepareLaneChangeLeft) {
+  else if(curr_state.name == VehicleStates::PrepareLaneChangeLeft) {
     successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
     successor_states.push_back(VehicleStates::LaneChangeLeft);
   }
@@ -193,7 +197,12 @@ vector<VehicleStates> find_successor_states(VehicleStates curr_state){
 };
 
 VehicleStates evaluate_successor_states(vector<VehicleStates> successor_states, Vehicle ego){
-  VehicleStates min_cost_state;
+  VehicleStates min_cost_state = VehicleStates::KeepLane;
+
+  for(int i=0; i<successor_states.size(); i++)
+  {
+    
+  }
 
   // If there is a vehicle ahead of the vehicle, change lane
   int lane = 1;
@@ -313,12 +322,12 @@ int main() {
 
           json msgJson;
 
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
+          vector<VehicleStates> successor_states = find_successor_states(ego.curr_state, ego);
 
-          // Scan for targets
-          // Initialize flag for finding a target to false, and speed of target to 100 m/s.
-          bool found_target = false;
+
+
+          // Scan for target in lane
+          // Initialize speed of target to 100 m/s.
           double v_target_obj = 100; // m/s
           double dist_target_obj = 1000; // m
 
@@ -349,34 +358,32 @@ int main() {
           double t = 0.02; // s
           double max_jerk = 10.0; // m/s^3
 
+
+          double target_speed = ego.speed*1.6/3.6; // m/s
+          double lim_speed = 49.5*1.6/3.6; 
+
+          if(target_speed > v_target_obj*0.98) {
+            target_speed -= (max_jerk * t * 0.2);
+          }
+          else if(target_speed < lim_speed){
+            target_speed += (max_jerk * t);
+          }
+
+          double dist_inc = target_speed*t;
+
           double prev_x = 0;
           double prev_y = 0;
           double prev_theta = deg2rad(ego.yaw);
-          double prev_speed = ego.speed*1.6/3.6; // m/s
 
-          double target_speed = prev_speed;
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
 
-          double lim_speed = 49.5*1.6/3.6; 
-
-          std::cout << "prev speed: " << prev_speed << "\tspeed lim: " << lim_speed << "\tcar in front: " << v_target_obj << std::endl;
-
-          if(prev_speed > v_target_obj*0.98) {
-            target_speed = prev_speed-max_jerk*t*0.2;
-          }
-          else if(prev_speed < lim_speed){
-            target_speed = prev_speed+max_jerk*t;
-          }
-
-          //double target_speed = std::min(prev_speed+max_jerk*t, std::min(49.5, v_car_in_front)); // mph
-
-          double dist_inc = target_speed*t;
+          //generate_ego_traj(next_x_vals, next_y_vals, ego, target_state);
 
           for(int i=0; i<50; i++)
           {
             double next_x = prev_x + dist_inc;
             double next_y = s(next_x); 
-            //double next_x = prev_x + dist_inc*cos(prev_theta);
-            //double next_y = s(next_x);
 
             double dist = distance(prev_x, prev_y, next_x, next_y); 
 
