@@ -82,18 +82,6 @@ void Vehicle::set_values(const double x_in, const double y_in, const double s_in
   speed = speed_in;
 }
 
-VehicleStates select_state(const Vehicle ego){
-  // return the minimum cost of all successor states
-  VehicleStates state;
-
-  if((ego.curr_state.name == VehicleStates::KeepLane) & (ego.lane == 1) & (ego.speed > 20))
-  {
-    state = VehicleStates::LaneChangeLeft;
-  }
-
-  return state;
-};
-
 void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
 {
   for(int i=0; i<x.size(); i++)
@@ -196,18 +184,36 @@ vector<VehicleStates> find_successor_states(State curr_state, const Vehicle veh)
   return successor_states;
 };
 
-VehicleStates evaluate_successor_states(vector<VehicleStates> successor_states, Vehicle ego){
+VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_states, const Vehicle ego, const vector<vector<double>> sensor_fusion){
+  // default, stay in lane
   VehicleStates min_cost_state = VehicleStates::KeepLane;
+  double min_cost = 1;
+
+  vector<double> state_costs;
+
+  int number_of_lanes = 3;
+  vector<double> lane_speeds;
+  lane_speeds.push_back(20);
+  lane_speeds.push_back(20);
+  lane_speeds.push_back(30);
+
+  double max_speed = 22;  
 
   for(int i=0; i<successor_states.size(); i++)
   {
-    
+    double cost;
+
+    cost = std::max(0.0, max_speed-lane_speeds[i])/max_speed;
+
+    state_costs.push_back(cost); 
+    std::cout << successor_states[i] << "cost: " << cost << std::endl;
+
+    if(cost < min_cost)
+    {
+      min_cost_state = successor_states[i];
+      min_cost = cost;
+    }
   }
-
-  // If there is a vehicle ahead of the vehicle, change lane
-  int lane = 1;
-  //bool vehicle_ahead = check_vehicle_in_lane()
-
 
   std::cout << "min cost state: " << min_cost_state << std::endl;
   return min_cost_state;
@@ -324,7 +330,7 @@ int main() {
 
           vector<VehicleStates> successor_states = find_successor_states(ego.curr_state, ego);
 
-
+          VehicleStates min_cost_state = evaluate_successor_states(successor_states, ego, sensor_fusion);
 
           // Scan for target in lane
           // Initialize speed of target to 100 m/s.
