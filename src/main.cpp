@@ -36,7 +36,7 @@ If LCL is selected, then the waypoints should refer to the left lane in some poi
 
 */ 
 
-enum VehicleStates {
+enum class VehicleStates {
   KeepLane,
   PrepareLaneChangeLeft, 
   PrepareLaneChangeRight,
@@ -258,22 +258,19 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
   {
     double cost = 1;
 
+    std::cout << i << ": ";
+
     if(successor_states[i] == VehicleStates::KeepLane){
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      std::cout << "KeepLane cost:\t" << cost << std::endl;
     }
     else if((successor_states[i] == VehicleStates::LaneChangeLeft) | (successor_states[i] == VehicleStates::PrepareLaneChangeLeft)) {
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
-      if(successor_states[i] == VehicleStates::LaneChangeLeft) { 
-        cost += std::max(0.0, abs((lane_speeds[ego.lane-1]-ego.speed)))/ego.speed;
-      }
     }
     else if((successor_states[i] == VehicleStates::LaneChangeRight) | (successor_states[i] == VehicleStates::PrepareLaneChangeRight)) {
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;
-      if(successor_states[i] == VehicleStates::LaneChangeRight) { 
-        cost += std::max(0.0, abs((lane_speeds[ego.lane+1]-ego.speed)))/ego.speed;
-      }
     }
-    std::cout << "successor state: " << VehStateNames[successor_states[i]] << ", cost: " << cost << std::endl;
+//    std::cout << "successor state: " << VehStateNames[successor_states[i]] << ", cost: " << cost << std::endl;
 
     state_costs.push_back(cost); 
 
@@ -284,7 +281,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
     }
   }
 
-  std::cout << "min cost state: " << min_cost_state << std::endl;
+  //std::cout << "min cost state: " << min_cost_state << std::endl;
   return min_cost_state;
 
 };
@@ -449,6 +446,8 @@ int main() {
             else if(target_speed < lim_speed){
               target_speed += (max_jerk * t);
             }
+
+            target_lane = ego.lane -1;
           }
           
           else if(min_cost_state == VehicleStates::PrepareLaneChangeRight)
@@ -470,6 +469,7 @@ int main() {
             else if(target_speed < lim_speed){
               target_speed += (max_jerk * t);
             }
+            target_lane = ego.lane + 1;
           }
 
           else if(min_cost_state == VehicleStates::LaneChangeLeft)
