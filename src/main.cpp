@@ -106,15 +106,11 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
                                const vector<double> map_wp_x, const vector<double> map_wp_y, const vector<double> map_wp_s){
   
   // The first point to consider is the car's current position
-
   vector<double> x_pts;
   vector<double> y_pts;
-
   x_pts.push_back(veh.x);
   y_pts.push_back(veh.y);
-
-  // std::cout<<"veh x: " << veh.x << "\ty: " << veh.y << std::endl;
-
+  
   // In order to have a smoothened behavior, points from previous path can be added
   // to the generation of spline, so there are no immediate jerky movements. 
 
@@ -136,22 +132,19 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
         continue;
       }
 
-      // std::cout << "prev " << p << ", x: " << x_pt << "\ty: " << y_pt << std::endl;
-
       x_pts.push_back(x_pt);
       y_pts.push_back(y_pt);
     }
   }
           
   for(int i=0; i<3; i++) {
-    vector<double> xy = getXY(veh.s+(i+1)*20, 2+target_lane*4, map_wp_s, map_wp_x, map_wp_y);
+    vector<double> xy = getXY(veh.s+(i+1)*30, 2+target_lane*4, map_wp_s, map_wp_x, map_wp_y);
 
     double x_pt = xy[0];
     double y_pt = xy[1];
 
     x_pts.push_back(x_pt);
     y_pts.push_back(y_pt);
-
   }
   
   transform_pts_to_ego_coord(x_pts, y_pts, veh);
@@ -168,22 +161,33 @@ vector<VehicleStates> find_successor_states(const Vehicle veh){
   VehicleStates current_state = veh.state;
 
   successor_states.push_back(VehicleStates::KeepLane);
+  std::cout << "KeepLane\t";
   if(current_state == VehicleStates::KeepLane) {
     if(veh.lane != 0) {
       successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
+      std::cout << "PLCL\t";
     }
     if(veh.lane != 2) {
       successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+      std::cout << "PLCR\t";
     }
   }
   else if(current_state == VehicleStates::PrepareLaneChangeRight) {
     successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
     successor_states.push_back(VehicleStates::LaneChangeRight);
+    std::cout << "PLCR\t";
+    std::cout << "LCR\t";
+  
   }
   else if(current_state == VehicleStates::PrepareLaneChangeLeft) {
     successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
     successor_states.push_back(VehicleStates::LaneChangeLeft);
+    std::cout << "PLCL\t";
+    std::cout << "LCL\t";
+  
   }
+
+  std::cout << "added" << std::endl;
 
   return successor_states;
 };
@@ -268,13 +272,32 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
       std::cout << "KeepLane cost:\t" << cost << std::endl;
     }
     else if((successor_states[i] == VehicleStates::LaneChangeLeft) | (successor_states[i] == VehicleStates::PrepareLaneChangeLeft)) {
-      cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
-      if(ego.lane != 2) {
-        cost += 0.1;
+      if(ego.lane == 0)
+      {
+        cost = 1;
       }
+      else
+      {
+        cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+        cost += 0.1;
+        if(ego.lane != 2) {
+          cost += 0.1;
+        }
+      }
+      std::cout << "Left cost:\t" << cost << std::endl;
+
     }
     else if((successor_states[i] == VehicleStates::LaneChangeRight) | (successor_states[i] == VehicleStates::PrepareLaneChangeRight)) {
-      cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;
+      if(ego.lane == 2)
+      {
+        cost = 1;
+      }
+      else
+      {
+        cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
+        cost += 0.1;  
+      }
+      std::cout << "Right cost:\t" << cost << std::endl;
     }
 //    std::cout << "successor state: " << VehStateNames[successor_states[i]] << ", cost: " << cost << std::endl;
 
@@ -388,6 +411,19 @@ int main() {
           // Main car's localization Data
           ego.set_values(j[1]["x"], j[1]["y"], j[1]["s"], j[1]["d"], j[1]["yaw"], j[1]["speed"]);
 
+          if(ego.d > 0 && ego.d <= 4)
+          {
+            ego.lane = 0;
+          }
+          else if(ego.d > 4 && ego.d <= 8)
+          {
+            ego.lane = 1;
+          }
+          else if(ego.d > 8 && ego.d <= 12)
+          {
+            ego.lane = 2;
+          }
+
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
           auto previous_path_y = j[1]["previous_path_y"];
@@ -416,6 +452,8 @@ int main() {
           if(min_cost_state == VehicleStates::KeepLane) {
             // Scan for target in lane
             // Initialize speed of target to 100 m/s.
+            ego.state = VehicleStates::KeepLane;
+
             double v_target_obj = 100; // m/s
             double dist_target_obj = 1000; // m
 
