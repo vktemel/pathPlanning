@@ -262,10 +262,16 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
 
     if(successor_states[i] == VehicleStates::KeepLane){
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      if(ego.lane != 2) {
+        cost += 0.1;
+      }
       std::cout << "KeepLane cost:\t" << cost << std::endl;
     }
     else if((successor_states[i] == VehicleStates::LaneChangeLeft) | (successor_states[i] == VehicleStates::PrepareLaneChangeLeft)) {
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+      if(ego.lane != 2) {
+        cost += 0.1;
+      }
     }
     else if((successor_states[i] == VehicleStates::LaneChangeRight) | (successor_states[i] == VehicleStates::PrepareLaneChangeRight)) {
       cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;
