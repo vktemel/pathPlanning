@@ -38,36 +38,17 @@ If LCL is selected, then the waypoints should refer to the left lane in some poi
 
 enum class VehicleStates {
   KeepLane,
-  PrepareLaneChangeLeft, 
-  PrepareLaneChangeRight,
   LaneChangeLeft,
   LaneChangeRight
 };
 
-char *VehStateNames[] =
-{
-    "KeepLane",
-    "PrepLaneLeft",
-    "PrepLaneRight",
-    "LaneChangeLeft",
-    "LaneChangeRight"
-};
-
-class State{
-  public:
-  VehicleStates name;
-  int lane;
-  double speed;
-};
 class Vehicle {
   public:
   void set_values(double x, double y, double s, double d, double yaw, double speed);
   
   // Initialization of Vehicle Class
   Vehicle() :
-  x(0.0F), y(0.0F), s(0.0F), d(0.0F), yaw(0.0F), speed(0.0F),
-  lane(1.0F)
-  {}
+  x(0.0F), y(0.0F), s(0.0F), d(0.0F), yaw(0.0F), speed(0.0F), lane(1.0F) {}
 
   double x;
   double y;
@@ -87,6 +68,19 @@ void Vehicle::set_values(const double x_in, const double y_in, const double s_in
   d = d_in;
   yaw = yaw_in;
   speed = speed_in;
+
+  if(d > 0 && d <= 4)
+  {
+    lane = 0;
+  }
+  else if(d > 4 && d <= 8)
+  {
+    lane = 1;
+  }
+  else if(d > 8 && d <= 12)
+  {
+    lane = 2;
+  }
 }
 
 void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
@@ -161,36 +155,67 @@ vector<VehicleStates> find_successor_states(const Vehicle veh){
   VehicleStates current_state = veh.state;
 
   successor_states.push_back(VehicleStates::KeepLane);
-  std::cout << "KeepLane\t";
+  
   if(current_state == VehicleStates::KeepLane) {
     if(veh.lane != 0) {
-      successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
-      std::cout << "PLCL\t";
+      successor_states.push_back(VehicleStates::LaneChangeLeft);
     }
     if(veh.lane != 2) {
-      successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
-      std::cout << "PLCR\t";
+      successor_states.push_back(VehicleStates::LaneChangeRight);
     }
   }
-  else if(current_state == VehicleStates::PrepareLaneChangeRight) {
-    successor_states.push_back(VehicleStates::PrepareLaneChangeRight);
+  else if(current_state == VehicleStates::LaneChangeRight) {
     successor_states.push_back(VehicleStates::LaneChangeRight);
-    std::cout << "PLCR\t";
-    std::cout << "LCR\t";
-  
   }
-  else if(current_state == VehicleStates::PrepareLaneChangeLeft) {
-    successor_states.push_back(VehicleStates::PrepareLaneChangeLeft);
+  else if(current_state == VehicleStates::LaneChangeLeft) {
     successor_states.push_back(VehicleStates::LaneChangeLeft);
-    std::cout << "PLCL\t";
-    std::cout << "LCL\t";
-  
-  }
-
-  std::cout << "added" << std::endl;
+    }
 
   return successor_states;
 };
+
+double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<vector<double>> sensor_fusion) {
+  double cost;
+
+  int cnt = 0;
+
+  for(auto& obj : sensor_fusion) {
+    double s_obj = obj[5];
+    double d_obj = obj[6];
+
+    if((s_obj < ego.s+50) && (s_obj > ego.s) && (d_obj > lane*4) && (d_obj < lane*4+4))
+    {
+      cnt += 1;
+    }
+  }
+
+  if(cnt == 0) {
+    cost = 0.0;
+  }
+  else if(cnt == 1) {
+    cost = 0.5;
+  }
+  else {
+    cost = 1.0;
+  }
+
+  return cost;
+}
+
+double calc_cost_collision(const Vehicle ego, const int target_lane, const vector<vector<double>> sensor_fusion) {
+  double cost; 
+
+  for(auto& obj : sensor_fusion) {
+    double s_obj = obj[5];
+    double d_obj = obj[6];
+
+    if((s_obj < ego.s+5) && (s_obj > ego.s-5) && (d_obj >= target_lane*4) && (d_obj <= target_lane*4+4)) {
+      cost = 1;
+      break;
+    }
+  }
+  return cost; 
+}
 
 VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_states, const Vehicle ego, const vector<vector<double>> sensor_fusion){
   // default, stay in lane
@@ -265,42 +290,43 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
     std::cout << i << ": ";
 
     if(successor_states[i] == VehicleStates::KeepLane){
-      cost = std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      // Speed Cost
+      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      double empty_cost = calc_cost_lane_emptiness(ego, ego.lane, sensor_fusion);
+
+      cost = speed_cost + empty_cost;
+      
       if(ego.lane != 2) {
         cost += 0.1;
       }
-      std::cout << "KeepLane cost:\t" << cost << std::endl;
+
+      std::cout << "KeepLane cost:\t" << cost << "\t speed: " << speed_cost << "\t empty: " << empty_cost << std::endl;
     }
-    else if((successor_states[i] == VehicleStates::LaneChangeLeft) | (successor_states[i] == VehicleStates::PrepareLaneChangeLeft)) {
-      if(ego.lane == 0)
-      {
-        cost = 1;
-      }
-      else
-      {
-        cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+    else if(successor_states[i] == VehicleStates::LaneChangeLeft) {
+      
+      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+      double empty_cost = calc_cost_lane_emptiness(ego, ego.lane-1, sensor_fusion);
+      double collision_cost = calc_cost_collision(ego, ego.lane-1, sensor_fusion);
+      cost = speed_cost + empty_cost + collision_cost;
+      cost += 0.1;
+      if(ego.lane != 2) {
         cost += 0.1;
-        if(ego.lane != 2) {
-          cost += 0.1;
-        }
       }
-      std::cout << "Left cost:\t" << cost << std::endl;
+      std::cout << "Left cost:\t" << cost << "\t speed: " << speed_cost << "\t empty: " << empty_cost << std::endl;
 
     }
-    else if((successor_states[i] == VehicleStates::LaneChangeRight) | (successor_states[i] == VehicleStates::PrepareLaneChangeRight)) {
-      if(ego.lane == 2)
-      {
-        cost = 1;
-      }
-      else
-      {
-        cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
-        cost += 0.1;  
-      }
-      std::cout << "Right cost:\t" << cost << std::endl;
+    else if(successor_states[i] == VehicleStates::LaneChangeRight) {
+      
+      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
+      double empty_cost = calc_cost_lane_emptiness(ego, ego.lane+1, sensor_fusion);
+      double collision_cost = calc_cost_collision(ego, ego.lane+1, sensor_fusion);
+      cost = speed_cost + empty_cost + collision_cost;
+      cost += 0.1;  
+      std::cout << "Right cost:\t" << cost << "\t speed: " << speed_cost << "\t empty:" << empty_cost << std::endl;
     }
 //    std::cout << "successor state: " << VehStateNames[successor_states[i]] << ", cost: " << cost << std::endl;
 
+    cost = std::min(1.0, cost);
     state_costs.push_back(cost); 
 
     if(cost < min_cost)
@@ -315,7 +341,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
 
 };
 
-vector<double> check_vehicle_in_lane(const int lane, const vector<vector<double>> sensor_fusion, const Vehicle ego){
+vector<double> get_vehicles_in_lane(const int lane, const vector<vector<double>> sensor_fusion, const Vehicle ego){
   vector<double> obj_in_lane;
   
   // Scan all of sensor_fusion list for relevant targets
@@ -411,19 +437,6 @@ int main() {
           // Main car's localization Data
           ego.set_values(j[1]["x"], j[1]["y"], j[1]["s"], j[1]["d"], j[1]["yaw"], j[1]["speed"]);
 
-          if(ego.d > 0 && ego.d <= 4)
-          {
-            ego.lane = 0;
-          }
-          else if(ego.d > 4 && ego.d <= 8)
-          {
-            ego.lane = 1;
-          }
-          else if(ego.d > 8 && ego.d <= 12)
-          {
-            ego.lane = 2;
-          }
-
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
           auto previous_path_y = j[1]["previous_path_y"];
@@ -449,94 +462,58 @@ int main() {
           double target_speed = ego.speed*1.6/3.6; // m/s
           double lim_speed = 49.5*1.6/3.6; 
 
+          double target_acc = 0.0;
+
+          double v_target_obj = 100; // m/s
+          double dist_target_obj = 1000; // m
+
           if(min_cost_state == VehicleStates::KeepLane) {
             // Scan for target in lane
             // Initialize speed of target to 100 m/s.
             ego.state = VehicleStates::KeepLane;
 
-            double v_target_obj = 100; // m/s
-            double dist_target_obj = 1000; // m
-
-            vector<double> obj_ahead = check_vehicle_in_lane(ego.lane, sensor_fusion, ego);
+            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane, sensor_fusion, ego);
 
             if(obj_ahead.size() > 0){
               dist_target_obj = abs(ego.s-obj_ahead[5]); // m
               v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
-            }
-
-            if(target_speed > v_target_obj*0.98) {
-              target_speed -= (max_jerk * t * 0.2);
-            }
-            else if(target_speed < lim_speed){
-              target_speed += (max_jerk * t);
             }
           }
-          else if(min_cost_state == VehicleStates::PrepareLaneChangeLeft)
+          else if(min_cost_state == VehicleStates::LaneChangeRight)
           {
-            ego.state = VehicleStates:: PrepareLaneChangeLeft;
-            double v_target_obj = 100; // m/s
-            double dist_target_obj = 1000; // m
-
-            vector<double> obj_ahead = check_vehicle_in_lane(ego.lane-1, sensor_fusion, ego);
+            ego.state = VehicleStates:: LaneChangeRight;
+            
+            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane+1, sensor_fusion, ego);
 
             if(obj_ahead.size() > 0){
               dist_target_obj = abs(ego.s-obj_ahead[5]); // m
               v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
             }
 
-            if(target_speed > v_target_obj*0.98) {
-              target_speed -= (max_jerk * t * 0.2);
-            }
-            else if(target_speed < lim_speed){
-              target_speed += (max_jerk * t);
-            }
-
-            target_lane = ego.lane -1;
-          }
-          
-          else if(min_cost_state == VehicleStates::PrepareLaneChangeRight)
-          {
-            ego.state = VehicleStates:: PrepareLaneChangeRight;
-            double v_target_obj = 100; // m/s
-            double dist_target_obj = 1000; // m
-
-            vector<double> obj_ahead = check_vehicle_in_lane(ego.lane+1, sensor_fusion, ego);
-
-            if(obj_ahead.size() > 0){
-              dist_target_obj = abs(ego.s-obj_ahead[5]); // m
-              v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
-            }
-
-            if(target_speed > v_target_obj*0.98) {
-              target_speed -= (max_jerk * t * 0.2);
-            }
-            else if(target_speed < lim_speed){
-              target_speed += (max_jerk * t);
-            }
             target_lane = ego.lane + 1;
           }
 
           else if(min_cost_state == VehicleStates::LaneChangeLeft)
           {
             ego.state = VehicleStates:: LaneChangeLeft;
-            double v_target_obj = 100; // m/s
-            double dist_target_obj = 1000; // m
-
-            vector<double> obj_ahead = check_vehicle_in_lane(ego.lane-1, sensor_fusion, ego);
+            
+            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane-1, sensor_fusion, ego);
 
             if(obj_ahead.size() > 0){
               dist_target_obj = abs(ego.s-obj_ahead[5]); // m
               v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
             }
 
-            if(target_speed > v_target_obj*0.98) {
-              target_speed -= (max_jerk * t * 0.2);
-            }
-            else if(target_speed < lim_speed){
-              target_speed += (max_jerk * t);
-            }
-
             target_lane = ego.lane-1;
+          }
+
+          if(target_speed > v_target_obj*0.98) {
+            //target_speed -= (max_jerk * t * 0.2);
+            target_acc = -1.0*max_jerk*t*0.2;
+          }
+          else if(target_speed < lim_speed){
+            //target_speed += (max_jerk * t);
+            target_acc = max_jerk*t;
           }
 
           
@@ -553,9 +530,6 @@ int main() {
           tk::spline s;
           s = generate_state_spline(target_lane, ego, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
-          
-          double dist_inc = target_speed*t;
-
           double prev_x = 0;
           double prev_y = 0;
           double prev_theta = deg2rad(ego.yaw);
@@ -564,10 +538,15 @@ int main() {
           vector<double> next_y_vals;
 
           //generate_ego_traj(next_x_vals, next_y_vals, ego, target_state);
+          
+          target_speed += target_acc;
 
           for(int i=0; i<50; i++)
           {
-            double next_x = prev_x + dist_inc;
+            
+            double dist_inc = target_speed*t*(i-1);
+
+            double next_x = 0 + dist_inc;
             double next_y = s(next_x); 
 
             double dist = distance(prev_x, prev_y, next_x, next_y); 
@@ -581,6 +560,11 @@ int main() {
 
             next_x_vals.push_back(next_x);
             next_y_vals.push_back(next_y);
+          }
+
+          for(int i=0; i<20; i++)
+          {
+            std::cout << "Next Path (Map)\tx: " << next_x_vals[i] << "\ty: " << next_y_vals[i] << std::endl;
           }
 
           msgJson["next_x"] = next_x_vals;
