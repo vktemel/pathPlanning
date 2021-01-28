@@ -116,7 +116,7 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
   int prev_path_size = prev_path_y.size();
 
   // Push previous path points for smoothening
-  int prev_path_limit = 3;
+  int prev_path_limit = 5;
   if(prev_path_size > prev_path_limit)
   {
     for(int p=0; p<prev_path_limit; p++) 
@@ -212,6 +212,7 @@ double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<
   // Initialize variables
   double cost = 1.0;
   int cnt = 0;
+  double scan_dist = 40;
 
   // Count objects in the given lane
   for(auto& obj : sensor_fusion) 
@@ -219,7 +220,7 @@ double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<
     double s_obj = obj[5];
     double d_obj = obj[6];
 
-    if((s_obj < ego.s+50) && (s_obj > ego.s) && (d_obj > lane*4) && (d_obj < lane*4+4))
+    if((s_obj < ego.s+scan_dist) && (s_obj > ego.s) && (d_obj > lane*4) && (d_obj < lane*4+4))
     {
       cnt += 1;
     }
@@ -267,7 +268,10 @@ double calc_cost_collision(const Vehicle ego, const int target_lane, const vecto
 
 double calc_cost_speed(const Vehicle ego, const int lane, const vector<vector<double>> sensor_fusion) 
 {
-  
+  // This function calculates the cost associated with the lanes speed. 
+  // If the lane speed is slower than the max speed, then this is penalized by 
+  // increasing the cost of the lane. Lane speeds are determined by the average
+  // speed of the vehicles around ego vehicle on the specific lane
   double cost = 0.0;
   double lane_speed = 0.0;
   double max_speed = 22.0;
@@ -323,7 +327,7 @@ double calc_cost_speed(const Vehicle ego, const int lane, const vector<vector<do
 VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_states, const Vehicle ego, const vector<vector<double>> sensor_fusion){
   // default, stay in lane
   VehicleStates min_cost_state = VehicleStates::KeepLane;
-  double min_cost = 1;
+  double min_cost = 1.0;
 
   vector<double> state_costs;
 
@@ -334,44 +338,41 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
   {
     double cost = 1;
 
-    std::cout << i << ": ";
-
     if(successor_states[i] == VehicleStates::KeepLane){
-      // Speed Cost
-      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); // std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); 
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane, sensor_fusion);
-
       cost = speed_cost + empty_cost;
       
+      // Add a penalty for not being on the right-most lane
       if(ego.lane != 2) {
         cost += 0.1;
       }
-
-      std::cout << "KeepLane cost:\t" << cost << "\t speed: " << speed_cost << "\t empty: " << empty_cost << std::endl;
     }
     else if(successor_states[i] == VehicleStates::LaneChangeLeft) {
       
-      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); //std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); 
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane-1, sensor_fusion);
       double collision_cost = calc_cost_collision(ego, ego.lane-1, sensor_fusion);
       cost = speed_cost + empty_cost + collision_cost;
+
+      // Add a penalty for lane change request (vehicle prefers to keep lane when possible)
       cost += 0.1;
+
+      // Add a penalty for not being on the right-most lane
       if(ego.lane != 2) {
         cost += 0.1;
       }
-      std::cout << "Left cost:\t" << cost << "\t speed: " << speed_cost << "\t empty: " << empty_cost << std::endl;
-
     }
     else if(successor_states[i] == VehicleStates::LaneChangeRight) {
       
-      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); //std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); 
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane+1, sensor_fusion);
       double collision_cost = calc_cost_collision(ego, ego.lane+1, sensor_fusion);
       cost = speed_cost + empty_cost + collision_cost;
+
+      // Add a penalty for lane change request (vehicle prefers to keep lane when possible)
       cost += 0.1;  
-      std::cout << "Right cost:\t" << cost << "\t speed: " << speed_cost << "\t empty:" << empty_cost << std::endl;
     }
-//    std::cout << "successor state: " << VehStateNames[successor_states[i]] << ", cost: " << cost << std::endl;
 
     cost = std::min(1.0, cost);
     state_costs.push_back(cost); 
@@ -383,9 +384,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
     }
   }
 
-  //std::cout << "min cost state: " << min_cost_state << std::endl;
   return min_cost_state;
-
 };
 
 vector<double> get_vehicles_in_lane(const int lane, const vector<vector<double>> sensor_fusion, const Vehicle ego){
@@ -459,6 +458,7 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  // Initialize ego vehicle for simulation
   Vehicle ego;
   ego.lane = 1;
   ego.state = VehicleStates::KeepLane;
@@ -482,6 +482,7 @@ int main() {
         if (event == "telemetry") {
           // j[1] is the data JSON object
           // Main car's localization Data
+          // Assign properties to ego vehicle
           ego.set_values(j[1]["x"], j[1]["y"], j[1]["s"], j[1]["d"], j[1]["yaw"], j[1]["speed"]);
 
           // Previous path data given to the Planner
@@ -497,72 +498,57 @@ int main() {
 
           json msgJson;
 
-          vector<VehicleStates> successor_states = find_successor_states(ego);
-
-          VehicleStates min_cost_state = evaluate_successor_states(successor_states, ego, sensor_fusion);
-
+          // INITIALIZE VARIABLES
           int target_lane = ego.lane;
+          double target_speed = ego.speed*1.6/3.6; // m/s
+          double target_acc = 0.0; // m/s^2
 
           double t = 0.02; // s
           double max_jerk = 10.0; // m/s^3
+          double lim_speed = 49.5*1.6/3.6; // m/s
+          
+          // Find the minimum cost state for this timestep, by looking at 
+          // possible successor states and evaluate them according to their cost
+          vector<VehicleStates> successor_states = find_successor_states(ego);
+          VehicleStates min_cost_state = evaluate_successor_states(successor_states, ego, sensor_fusion);
 
-          double target_speed = ego.speed*1.6/3.6; // m/s
-          double lim_speed = 49.5*1.6/3.6; 
-
-          double target_acc = 0.0;
-
-          double v_target_obj = 100; // m/s
-          double dist_target_obj = 1000; // m
-
+          // Based on the minimum cost state, set the ego state and target lane. 
           if(min_cost_state == VehicleStates::KeepLane) {
-            // Scan for target in lane
-            // Initialize speed of target to 100 m/s.
             ego.state = VehicleStates::KeepLane;
-
-            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane, sensor_fusion, ego);
-
-            if(obj_ahead.size() > 0){
-              dist_target_obj = abs(ego.s-obj_ahead[5]); // m
-              v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
-            }
           }
           else if(min_cost_state == VehicleStates::LaneChangeRight)
           {
             ego.state = VehicleStates:: LaneChangeRight;
             
-            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane+1, sensor_fusion, ego);
-
-            if(obj_ahead.size() > 0){
-              dist_target_obj = abs(ego.s-obj_ahead[5]); // m
-              v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
-            }
-
             target_lane = ego.lane + 1;
           }
-
           else if(min_cost_state == VehicleStates::LaneChangeLeft)
           {
             ego.state = VehicleStates:: LaneChangeLeft;
-            
-            vector<double> obj_ahead = get_vehicles_in_lane(ego.lane-1, sensor_fusion, ego);
-
-            if(obj_ahead.size() > 0){
-              dist_target_obj = abs(ego.s-obj_ahead[5]); // m
-              v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
-            }
-
             target_lane = ego.lane-1;
           }
 
+          // Calculate the speed that the ego vehicle to follow in the target lane. 
+          // If there is a slower object ahead in the target lane, then the 
+          // ego vehicle shall decelerate to meet the speed of that object. Otherwise,
+          // if the speed of the vehicle is lower than the speed limit, then ego 
+          // shall accelarate. Otherwise the speed shall stay the same. 
+          double v_target_obj = 100; // m/s
+          double dist_target_obj = 1000; // m
+
+          vector<double> obj_ahead = get_vehicles_in_lane(target_lane, sensor_fusion, ego);
+
+          if(obj_ahead.size() > 0){
+            dist_target_obj = abs(ego.s-obj_ahead[5]); // m
+            v_target_obj = sqrt(obj_ahead[3]*obj_ahead[3]+obj_ahead[4]*obj_ahead[4]); // m/s
+          }
+
           if(target_speed > v_target_obj*0.98) {
-            //target_speed -= (max_jerk * t * 0.2);
             target_acc = -1.0*max_jerk*t*0.2;
           }
           else if(target_speed < lim_speed){
-            //target_speed += (max_jerk * t);
             target_acc = max_jerk*t;
           }
-
           
           // Initialize x and y points to create a rough trajectory. These points will be then
           // used in a spline to have a smoothened trajectory. 
@@ -573,7 +559,6 @@ int main() {
           double ref_y = ego.y;
           double ref_yaw = deg2rad(ego.yaw);
 
-
           tk::spline s;
           s = generate_state_spline(target_lane, ego, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
@@ -581,27 +566,30 @@ int main() {
           double prev_y = 0;
           double prev_theta = deg2rad(ego.yaw);
 
+          // Generate Trajectory for next timestep
+
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          //generate_ego_traj(next_x_vals, next_y_vals, ego, target_state);
-          
           target_speed += target_acc;
 
           for(int i=0; i<50; i++)
           {
-            
+            // Calculate the distance the vehicle needs to travel for next step
+            // dist = speed * time * counter
             double dist_inc = target_speed*t*(i-1);
 
+            // Calculate the x and y values in ego coordinate system
             double next_x = 0 + dist_inc;
             double next_y = s(next_x); 
 
-            double dist = distance(prev_x, prev_y, next_x, next_y); 
-
+            // assign the previous x, y and theta values based on the newly
+            // calculated point
             prev_theta = atan2(next_y-prev_y,next_x-prev_x);
             prev_x = next_x;
             prev_y = next_y; 
 
+            // transform back to map coordinate system
             next_x = ego.x + (prev_x*cos(ref_yaw) - prev_y*sin(ref_yaw));
             next_y = ego.y + (prev_x*sin(ref_yaw) + prev_y*cos(ref_yaw));
 
@@ -609,10 +597,6 @@ int main() {
             next_y_vals.push_back(next_y);
           }
 
-          for(int i=0; i<20; i++)
-          {
-            std::cout << "Next Path (Map)\tx: " << next_x_vals[i] << "\ty: " << next_y_vals[i] << std::endl;
-          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
