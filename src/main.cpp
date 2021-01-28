@@ -36,13 +36,14 @@ If LCL is selected, then the waypoints should refer to the left lane in some poi
 
 */ 
 
-enum class VehicleStates {
+enum class VehicleStates 
+{
   KeepLane,
   LaneChangeLeft,
   LaneChangeRight
 };
-
-class Vehicle {
+class Vehicle 
+{
   public:
   void set_values(double x, double y, double s, double d, double yaw, double speed);
   
@@ -60,8 +61,9 @@ class Vehicle {
   int lane;
 };
 
-void Vehicle::set_values(const double x_in, const double y_in, const double s_in, const double d_in, const double yaw_in, const double speed_in)
+void Vehicle::set_values(const double x_in, const double y_in, const double s_in, const double d_in, const double yaw_in, const double speed_in) 
 {
+  // This function sets properties of the Vehicle class based on the given input values
   x = x_in; 
   y = y_in;
   s = s_in;
@@ -83,8 +85,9 @@ void Vehicle::set_values(const double x_in, const double y_in, const double s_in
   }
 }
 
-void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego)
+void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehicle ego) 
 {
+  // This function transforms the points from map coordinate system to ego coordinate system
   for(int i=0; i<x.size(); i++)
   {
     double transformed_x = (x[i]-ego.x)*cos(-deg2rad(ego.yaw))-(y[i]-ego.y)*sin(-deg2rad(ego.yaw));
@@ -97,7 +100,8 @@ void transform_pts_to_ego_coord(vector<double> &x, vector<double> &y, const Vehi
 
 tk::spline generate_state_spline(int target_lane, const Vehicle veh, 
                                const vector<double> prev_path_x, const vector<double> prev_path_y, 
-                               const vector<double> map_wp_x, const vector<double> map_wp_y, const vector<double> map_wp_s){
+                               const vector<double> map_wp_x, const vector<double> map_wp_y, const vector<double> map_wp_s) 
+{
   
   // The first point to consider is the car's current position
   vector<double> x_pts;
@@ -113,8 +117,10 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
 
   // Push previous path points for smoothening
   int prev_path_limit = 3;
-  if(prev_path_size > prev_path_limit){
-    for(int p=0; p<prev_path_limit; p++) {
+  if(prev_path_size > prev_path_limit)
+  {
+    for(int p=0; p<prev_path_limit; p++) 
+    {
       double x_pt = prev_path_x[p];
       double y_pt = prev_path_y[p];
 
@@ -126,12 +132,18 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
         continue;
       }
 
+      // push the x point and y point to the main vector
       x_pts.push_back(x_pt);
       y_pts.push_back(y_pt);
     }
   }
           
-  for(int i=0; i<3; i++) {
+  // In order to have spline extend to future, get 3 more points which are pointing towards the target lane
+  // This way, a spline will be generated that ends at target lane, and the vehicle can have
+  // a smooth transition to reach the target lane. 
+
+  for(int i=0; i<3; i++) 
+  {
     vector<double> xy = getXY(veh.s+(i+1)*30, 2+target_lane*4, map_wp_s, map_wp_x, map_wp_y);
 
     double x_pt = xy[0];
@@ -141,45 +153,69 @@ tk::spline generate_state_spline(int target_lane, const Vehicle veh,
     y_pts.push_back(y_pt);
   }
   
+  // transform the points to ego coordinate system
   transform_pts_to_ego_coord(x_pts, y_pts, veh);
 
+  // create and set points to the spline
   tk::spline s;
   s.set_points(x_pts, y_pts);
 
+  // return the spline
   return s;
 };
 
-vector<VehicleStates> find_successor_states(const Vehicle veh){
+vector<VehicleStates> find_successor_states(const Vehicle veh) 
+{
+  // This function finds the possible next states based on the vehicles current state
+  // It assumes KeepLane is always a possible state (in case it's less costlier to stay
+  // in current lane), and it adds options to change lanes to left and right
+  // based on ego vehicle's current lane. 
   vector<VehicleStates> successor_states;
 
   VehicleStates current_state = veh.state;
 
   successor_states.push_back(VehicleStates::KeepLane);
   
-  if(current_state == VehicleStates::KeepLane) {
-    if(veh.lane != 0) {
+  if(current_state == VehicleStates::KeepLane) 
+  {
+    // ego vehicle is not on left-most lane
+    if(veh.lane != 0) 
+    {
       successor_states.push_back(VehicleStates::LaneChangeLeft);
     }
-    if(veh.lane != 2) {
+    // ego vehicle is not on right-most lane
+    if(veh.lane != 2) 
+    {
       successor_states.push_back(VehicleStates::LaneChangeRight);
     }
   }
-  else if(current_state == VehicleStates::LaneChangeRight) {
+  else if(current_state == VehicleStates::LaneChangeRight) 
+  {
+    // If LaneChangeRight is current state, then it's assumed by default to be a possible successor state
     successor_states.push_back(VehicleStates::LaneChangeRight);
   }
-  else if(current_state == VehicleStates::LaneChangeLeft) {
+  else if(current_state == VehicleStates::LaneChangeLeft) 
+  {
+    // If LaneChangeLeft is current state, then it's assumed by default to be a possible successor state
     successor_states.push_back(VehicleStates::LaneChangeLeft);
-    }
+  }
 
   return successor_states;
 };
 
-double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<vector<double>> sensor_fusion) {
-  double cost;
+double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<vector<double>> sensor_fusion) 
+{
+  // This function calculates the cost for a given lane on the road based on the emptiness of the lane
+  // If there are no vehicles in sight, then the cost is 0. If there's only 1 vehicle, then cost is 0.5,
+  // if there are more than 1 vehicle in a given lane, then the cost will be set to 1. 
 
+  // Initialize variables
+  double cost = 1.0;
   int cnt = 0;
 
-  for(auto& obj : sensor_fusion) {
+  // Count objects in the given lane
+  for(auto& obj : sensor_fusion) 
+  {
     double s_obj = obj[5];
     double d_obj = obj[6];
 
@@ -189,13 +225,17 @@ double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<
     }
   }
 
-  if(cnt == 0) {
+  // Set the costs
+  if(cnt == 0) 
+  {
     cost = 0.0;
   }
-  else if(cnt == 1) {
+  else if(cnt == 1) 
+  {
     cost = 0.5;
   }
-  else {
+  else 
+  {
     cost = 1.0;
   }
 
@@ -203,18 +243,81 @@ double calc_cost_lane_emptiness(const Vehicle ego, const int lane, const vector<
 }
 
 double calc_cost_collision(const Vehicle ego, const int target_lane, const vector<vector<double>> sensor_fusion) {
-  double cost; 
 
-  for(auto& obj : sensor_fusion) {
+  // This function looks if another object exists in the target lane that ego vehicle may collide with. 
+  // The distance to be scanned behind and ahead of the ego vehicle.  is parameterized for better optimization.
+  double cost = 0.0; 
+  double scan_dist = 10.0; // meters
+
+  // Scan objects to find if any object is within immediate proximity of ego vehicle on the target lane. 
+  for(auto& obj : sensor_fusion) 
+  {
     double s_obj = obj[5];
     double d_obj = obj[6];
 
-    if((s_obj < ego.s+5) && (s_obj > ego.s-5) && (d_obj >= target_lane*4) && (d_obj <= target_lane*4+4)) {
-      cost = 1;
+    // Set cost to 1 if a collision is expected. 
+    if((s_obj < ego.s+scan_dist) && (s_obj > ego.s-scan_dist) && (d_obj >= target_lane*4) && (d_obj <= target_lane*4+4)) 
+    {
+      cost = 1.0;
       break;
     }
   }
   return cost; 
+}
+
+double calc_cost_speed(const Vehicle ego, const int lane, const vector<vector<double>> sensor_fusion) 
+{
+  
+  double cost = 0.0;
+  double lane_speed = 0.0;
+  double max_speed = 22.0;
+
+  vector<vector<double>> objects_in_lane;
+  for(auto& obj : sensor_fusion) 
+  { 
+    //Extract object information
+    double id_obj = obj[0];
+    double x_obj = obj[1];
+    double y_obj = obj[2];
+    double vx_obj = obj[3];
+    double vy_obj = obj[4];
+    double s_obj = obj[5];
+    double d_obj = obj[6];
+
+    if((s_obj > (ego.s-5)) && (s_obj < ego.s + 30) && (d_obj < lane*4+4) & (d_obj >= lane*4)) 
+    {
+      vector<double> selected;
+      selected.push_back(id_obj);
+      selected.push_back(x_obj);
+      selected.push_back(y_obj);
+      selected.push_back(vx_obj);
+      selected.push_back(vy_obj);
+      selected.push_back(s_obj);
+      selected.push_back(d_obj);
+      objects_in_lane.push_back(selected);
+    }
+  }
+
+  int cnt_object = objects_in_lane.size();
+  if(cnt_object == 0)
+  {
+    return cost;
+  }
+  else
+  {
+    int cnt = 0; 
+    
+    for(auto& obj : objects_in_lane)
+    {
+      double veh_speed = sqrt(obj[3]*obj[3]+obj[4]*obj[4]);
+      lane_speed += veh_speed;
+    }
+
+    lane_speed = lane_speed/cnt_object;
+  }
+
+  cost = std::max(0.0, max_speed-lane_speed)/max_speed;
+  return cost;
 }
 
 VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_states, const Vehicle ego, const vector<vector<double>> sensor_fusion){
@@ -224,62 +327,6 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
 
   vector<double> state_costs;
 
-  int number_of_lanes = 3;
-  double max_speed = 22;  
-  vector<double> lane_speeds(number_of_lanes, max_speed);
-
-  for(int i=0; i<number_of_lanes; i++)
-  {
-    // scan for all vehicles within -5 meters of ego and +30 meters of ego
-    // if no objects, then default to max speed
-    // else, get the minimum speed of objects
-    vector<vector<double>> objects_in_lane;
-    for(auto& obj : sensor_fusion) { 
-    //Extract object information
-      double id_obj = obj[0];
-      double x_obj = obj[1];
-      double y_obj = obj[2];
-      double vx_obj = obj[3];
-      double vy_obj = obj[4];
-      double s_obj = obj[5];
-      double d_obj = obj[6];
-
-      if((s_obj > (ego.s-5)) && (s_obj < ego.s + 30) && (d_obj < i*4+4) & (d_obj >= i*4)) {
-        vector<double> selected;
-        selected.push_back(id_obj);
-        selected.push_back(x_obj);
-        selected.push_back(y_obj);
-        selected.push_back(vx_obj);
-        selected.push_back(vy_obj);
-        selected.push_back(s_obj);
-        selected.push_back(d_obj);
-        objects_in_lane.push_back(selected);
-      }
-    }
-    // std::cout << "Found " << objects_in_lane.size() << " objects in lane " << i << std::endl;
-
-    int cnt_object = objects_in_lane.size();
-    if(cnt_object == 0)
-    {
-      continue;
-    }
-    else
-    {
-      double avg_speed = 0.0;
-      int cnt = 0; 
-      for(auto& obj : objects_in_lane)
-      {
-        double veh_speed = sqrt(obj[3]*obj[3]+obj[4]*obj[4]);
-        avg_speed += veh_speed;
-        // std::cout << "Lane " << i << " veh " << cnt << " sp: " << veh_speed << " vx: " << obj[3] << " vy: " << obj[4] << std::endl;
-      }
-      avg_speed = avg_speed/cnt_object;
-      lane_speeds[i] = avg_speed;
-    }
-
-    // std::cout << "Avg Speed in lane " << i << ": " << lane_speeds[i] << std::endl;
-  }
-  
   // This loop always start with keeplane, as keep lane is always an available successor state
   // In case that multiple lanes have equal costs, this will default to keep lane as it's the
   // initial min cost
@@ -291,7 +338,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
 
     if(successor_states[i] == VehicleStates::KeepLane){
       // Speed Cost
-      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); // std::max(0.0, max_speed-lane_speeds[ego.lane])/max_speed;
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane, sensor_fusion);
 
       cost = speed_cost + empty_cost;
@@ -304,7 +351,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
     }
     else if(successor_states[i] == VehicleStates::LaneChangeLeft) {
       
-      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); //std::max(0.0, max_speed-lane_speeds[ego.lane-1])/max_speed;
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane-1, sensor_fusion);
       double collision_cost = calc_cost_collision(ego, ego.lane-1, sensor_fusion);
       cost = speed_cost + empty_cost + collision_cost;
@@ -317,7 +364,7 @@ VehicleStates evaluate_successor_states(const vector<VehicleStates> successor_st
     }
     else if(successor_states[i] == VehicleStates::LaneChangeRight) {
       
-      double speed_cost = std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
+      double speed_cost = calc_cost_speed(ego, ego.lane, sensor_fusion); //std::max(0.0, max_speed-lane_speeds[ego.lane+1])/max_speed;  
       double empty_cost = calc_cost_lane_emptiness(ego, ego.lane+1, sensor_fusion);
       double collision_cost = calc_cost_collision(ego, ego.lane+1, sensor_fusion);
       cost = speed_cost + empty_cost + collision_cost;
