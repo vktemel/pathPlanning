@@ -69,7 +69,7 @@ void Vehicle::set_values(const double x_in, const double y_in, const double s_in
   s = s_in;
   d = d_in;
   yaw = yaw_in;
-  speed = speed_in;
+  speed = speed_in*1.6/3.6;
 
   if(d > 0 && d <= 4)
   {
@@ -500,7 +500,7 @@ int main() {
 
           // INITIALIZE VARIABLES
           int target_lane = ego.lane;
-          double target_speed = ego.speed*1.6/3.6; // m/s
+          double target_speed = ego.speed; // m/s
           double target_acc = 0.0; // m/s^2
 
           double t = 0.02; // s
@@ -562,12 +562,7 @@ int main() {
           tk::spline s;
           s = generate_state_spline(target_lane, ego, previous_path_x, previous_path_y, map_waypoints_x, map_waypoints_y, map_waypoints_s);
 
-          double prev_x = 0;
-          double prev_y = 0;
-          double prev_theta = deg2rad(ego.yaw);
-
           // Generate Trajectory for next timestep
-
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
@@ -583,20 +578,17 @@ int main() {
             double next_x = 0 + dist_inc;
             double next_y = s(next_x); 
 
-            // assign the previous x, y and theta values based on the newly
-            // calculated point
-            prev_theta = atan2(next_y-prev_y,next_x-prev_x);
-            prev_x = next_x;
-            prev_y = next_y; 
+            // assign temp x, y 
+            double temp_x = next_x;
+            double temp_y = next_y; 
 
             // transform back to map coordinate system
-            next_x = ego.x + (prev_x*cos(ref_yaw) - prev_y*sin(ref_yaw));
-            next_y = ego.y + (prev_x*sin(ref_yaw) + prev_y*cos(ref_yaw));
+            next_x = ego.x + (temp_x*cos(ref_yaw) - temp_y*sin(ref_yaw));
+            next_y = ego.y + (temp_x*sin(ref_yaw) + temp_y*cos(ref_yaw));
 
             next_x_vals.push_back(next_x);
             next_y_vals.push_back(next_y);
           }
-
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
